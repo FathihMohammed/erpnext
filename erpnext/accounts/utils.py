@@ -704,20 +704,37 @@ def update_reference_in_payment_entry(
 	if d.voucher_detail_no:
 		existing_row = payment_entry.get("references", {"name": d["voucher_detail_no"]})[0]
 
-		if d.allocated_amount <= existing_row.allocated_amount:
-			existing_row.allocated_amount -= d.allocated_amount
+		precision = existing_row.precision("allocated_amount")
+		if flt(d.allocated_amount, precision) > flt(existing_row.allocated_amount, precision):
+			allocated_df = existing_row.meta.get_field("allocated_amount")
+			frappe.throw(
+				_(
+					"Cannot allocate {0} against {1} {2}. Only {3} is unallocated in row #{4} of {5} {6}. Please refresh the unreconciled entries and allocate again."
+				).format(
+					frappe.bold(frappe.format_value(d.allocated_amount, allocated_df, existing_row)),
+					d.against_voucher_type,
+					frappe.bold(d.against_voucher),
+					frappe.bold(frappe.format_value(existing_row.allocated_amount, allocated_df, existing_row)),
+					existing_row.idx,
+					payment_entry.doctype,
+					frappe.bold(payment_entry.name),
+				),
+				title=_("Over Allocation"),
+			)
 
-			new_row = payment_entry.append("references")
-			new_row.docstatus = 1
-			for field in list(reference_details):
-				new_row.set(field, reference_details[field])
+		existing_row.allocated_amount -= d.allocated_amount
 
-			if existing_row.reference_doctype in advance_payment_doctypes:
-				new_row.advance_voucher_type = existing_row.reference_doctype
-				new_row.advance_voucher_no = existing_row.reference_name
-				new_row.payment_request = existing_row.payment_request
+		new_row = payment_entry.append("references")
+		new_row.docstatus = 1
+		for field in list(reference_details):
+			new_row.set(field, reference_details[field])
 
-			row = new_row
+		if existing_row.reference_doctype in advance_payment_doctypes:
+			new_row.advance_voucher_type = existing_row.reference_doctype
+			new_row.advance_voucher_no = existing_row.reference_name
+			new_row.payment_request = existing_row.payment_request
+
+		row = new_row
 
 	else:
 		new_row = payment_entry.append("references")
